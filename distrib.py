@@ -1,4 +1,4 @@
-'''Distributions used to empircally estimate the '''
+'''Distributions used to empircally estimate the kernels F_1, ..., F_k and the shared Dirichlet prior distribution'''
 
 
 from __future__ import division
