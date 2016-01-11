@@ -3,7 +3,7 @@ import numpy as np
 import scipy.stats as stats
 
 class simulate(object):
-"""Simulate data for all sites from a mixture of shared truncated normal distributions
+    """Simulate data for all sites from a mixture of shared truncated normal distributions
 
     Attributes:
         X (2D np.array): 1st index is for the site, 2nd index is for the subject
@@ -30,14 +30,14 @@ class simulate(object):
     """
 
     def __init__(self, n_sites, k, population_subj):
-    """draw X, data matrix of dimension (number of sites * total number of individuals), from
-    a mixture of K shared truncated normals
+        """draw X, data matrix of dimension (number of sites * total number of individuals), from
+        a mixture of K shared truncated normals
 
-    Args:
-        n_sites (integer): number of sites (variables) in each subject
-        k (integer): number of mixture components
-        population_subjects (1D np.array): index i corresponds to the number of 
-            subjects in population i"""
+        Args:
+            n_sites (integer): number of sites (variables) in each subject
+            k (integer): number of mixture components
+            population_subjects (1D np.array): index i corresponds to the number of 
+                subjects in population i"""
 
         assert(population_subj.ndim == 1), 'Argument population_subj is not 1 dimensional'
         self.n_sites = sites
@@ -48,14 +48,14 @@ class simulate(object):
         self._drawX()
 
     def _draw_pi(self):
-    """set true_pi: Draw each of the K-mixture weights from a uniform dirichlet"""
+        """set true_pi: Draw each of the K-mixture weights from a uniform dirichlet"""
 
         dim = (self.sites, self.pop.size)
         alpha = np.ones(self.K)
         self.true_pi = np.random.dirichlet(alpha, dim)
 
     def _draw_comp(self):
-    """Set true_comp: Draw the mixture components according to the probabilites in true_pi."""
+        """Set true_comp: Draw the mixture components according to the probabilites in true_pi."""
     
         self._draw_pi()
 
@@ -70,7 +70,7 @@ class simulate(object):
                 self.true_comp[s][labels == i] = np.random.choice(self.k, size = self.pop[i], p = self.true_pi[s, i])
 
     def _drawX(self):
-    """Set X: draw all the feature values from the respective truncated normals"""
+        """Set X: draw all the feature values from the respective truncated normals"""
 
         self._draw_comp()
         self.X = np.empty([self.sites, self.indiv])
