@@ -1,5 +1,8 @@
-'''Distributions used to empircally estimate the kernels F_1, ..., F_k and the shared Dirichlet prior distribution'''
-
+"""These distribution classes are used to empircally estimate the parameters of
+the shared kernels F_1, ..., F_k 
+from which each feature x (methylation value) is drawn
+and to estimate the shared Dirichlet prior distributions. Parameters estimated:
+mean, precision of the F_1, ..., F_k, number of components k, """
 
 from __future__ import division
 import numpy as np
@@ -8,66 +11,74 @@ import scipy.stats as stats
 import sys
 
 class NG(object):
-    '''parameters of the Normal Gamma distribution, updated using Gibbs simulation
+    """Normal Gamma posterior for Gibbs sampling the mean & precision of k kernels
 
     Public Attributes:
-        prior: dictionary of the 4 priors for a Normal Gamma (alpha, beta, mu, lambda)
-        mu: 2 D array of means, 1st index is the repetition number, 2nd index identifies the component
-        prec: 2 D array of precision (inverse variance), 1st index is the repetition number, 2nd index identifies the components
-    '''
+        prior (dictionary): parameters of the conjugate prior Normal Gamma
+        counter: 
+        ----Parameters for the component truncated-Normal kernels----
+        mu (2D np.array): mean, 1st index is the Gibbs sampling iteration, 
+            2nd index identifies the component kernel 
+        prec (2D np.array): precision (inverse variance), indexing is similar to mu
+    """
 
     def __init__(self, reps, data):
-        '''Args:
+        """Args:
             reps: total number of iterations of Gibbs sampler 
-            data: simulate_data object'''
+            data: simulate_data object
+        """
 
-        self.prior = {'alpha_0': 1, 'beta_0' : .5, 'mu_0' : .5, 'lambda_0' : 1}
+        self.prior = {'alpha_0' : 1, 'beta_0' : .5, 'mu_0' : .5, 'lambda_0' : 1}
         self.mu = np.zeros([reps+1, data.k])
         self.prec = np.zeros([reps+1, data.k])
+        self.counter = 0
         
         for k in range(data.k):
             self.prec[0][k] = self.draw_prec(0, 0, 0)
             self.mu[0][k] = self.draw_mean(0, self.prec[0][k], 0)
-        self.prior = {'alpha_0': 1, 'beta_0' : np.var(data.vals), 'mu_0' : .5, 'lambda_0' : 1}
+#        self.prior = {'alpha_0': 1, 'beta_0' : np.var(data.vals), 'mu_0' : .5, 'lambda_0' : 1}
 
-    def update(self, data, comp, rep):
-    """ Draw a new mean and precision from a normal gamma using the given data/ component values 
-    Args:
-        rep: repetition number of the gibbs sampler
-    """
-
-        for i in range(data.k):
+    def sample(self, data):
+        """Draw a mean and precision for each kernel from the posterior 
+        Args:
+            data: simulate_data object
+        """
+        self.counter += 1
+        for k in range(data.K):
 #retrieve observations from component k
-            data_k = data.vals[comp == i]
-            mu_k = self.mu[rep, i]
-            sigma_k = 1/np.sqrt(self.prec[rep, i])
-            n = data_k.size
-#determine sample statistics of observations in component k
-            if n > 0:
-#transform data from truncated normal to normal
-                data_t = self.transform_trunc(data_k, mu_k, sigma_k)
-                data_var = np.var(data_t)
-                data_avg = np.mean(data_t)
-#replace Nan with 0 when there is no data
-            if n == 0:
-                data_var = 0
-                data_avg = 0
-#sample for Normal distribution parameters
-#sample precision from a gamma (marginal for precision of the joint posterior is gamma)
-            self.prec[rep+1, i] = self.draw_prec(data_avg, data_var, n)
-#sample for means
-            self.mu[rep+1, i] = self.draw_mean(data_avg, self.prec[rep+1, i], n)
-         return None
+            X_k = data.X[comp == k]
+            n = X_k.size 
+            self.sample(X_k, n)
+        return None
 
-    def draw_prec(self, data_avg, data_var, n):
-    #draw a precision from a marginal Normal Gamma distribution
+    def update(self, values, k, n):
+        """Bayesian update of the prior parameters"""
+
+        if n > 0:
+            tansform_vals = self._transform_trunc(values, k)
+            var_X = np.var(tansform_vals)
+            avg_X = np.mean(tansform_vals)
+#n=0, so sampling from the posterior is equivalent to sampling from the prior.
+#Set var_X and avg_X to any value to allow drawing from the posterior method.
+#It will be multiplied by n, so it will have no influence.
+        if n == 0:
+            var_X = 0
+            avg_X = 0
+        self.prec[self.counter, k] = self.draw_prec(avg_X, var_X, n)
+        self.mu[self.counter, k] = self.draw_mean(avg_X, self.prec[self.counter, i], n)
+        return None
+
+    def _draw_prec(self, data_avg, data_var, n):
+        """draw a precision from the Gamma distribution"""
+
         alpha_1 = self.prior['alpha_0'] + n/2
         beta_1 = self.prior['beta_0'] + .5*(n*data_var) + .5 * (self.prior['lambda_0'] * n * (data_avg-self.prior['mu_0'])**2) / (self.prior['lambda_0'] + n)
         prec = np.random.gamma(alpha_1, 1/beta_1)
         return prec
 
-    def draw_mean(self, data_avg, prec, n):
-    #draw the mean from a normal gamma distribution conditional on the precision
+    def _draw_mean(self, data_avg, prec, n):
+        """draw the mean from a normal gamma distribution conditional on the precision"""
+
         mu_1 = (self.prior['lambda_0'] * self.prior['mu_0'] + n * data_avg) / (self.prior['lambda_0'] + n)
         lambda_1 = self.prior['lambda_0'] + n
     #compute standard deviation for the conditional normal distriubtion
@@ -75,14 +86,23 @@ class NG(object):
         mean = stats.norm.rvs(loc = mu_1, scale = stdev)
         return mean
 
-    def transform_trunc(self, data_k, mu_k, sigma_k):
-    '''Use inverse cdf, to transform the values from truncated normals, 
-    to the values from non-truncated normals'''
+    def _transform_trunc(self, values, k):
+        """Transform the truncated-Normal values to non-truncated Normal values
+            To transform: H^-1 (F(values)), where F is the CDF with truncation, 
+            and H is the CDF for normal distribution without truncation. 
+            H assumes the mean and precision from the previous Gibbs iteration 
+            as the parameters of Normal Distribution.
+        Args:
+        values (2D np.array): the collection of values belonging to kernel k
+        k (integer): kernel to which the values belongs to
+        """
 
-        a = (0 - mu_k) / sigma_k
-        b = (1 - mu_k) / sigma_k
-        data_cdf = stats.truncnorm.cdf(data_k, a, b, mu_k, sigma_k)
-        return stats.norm.ppf(data_cdf, mu_k, sigma_k)
+        mu = self.mu[self.counter - 1, k]
+        sigma = 1/np.sqrt(self.prec[self.counter - 1, k])
+        a = (0 - mu) / sigma
+        b = (1 - mu) / sigma
+        cdf_values = stats.truncnorm.cdf(values, a, b, mu, sigma)
+        return stats.norm.ppf(cdf_values, mu, sigma)
 
     def sort(self, a, b):
 #sort arrays using the order from the first
@@ -93,7 +113,7 @@ class NG(object):
         return a, b
 
 class MultiDirich(object):
-    '''Mutlinomial Dirichlet distribution'''
+    """Mutlinomial Dirichlet distribution"""
 
     def __init__(self, sites, data):
 #prior count is 1 for each component
@@ -127,10 +147,10 @@ class MultiDirich(object):
             self.pi[s] = np.random.dirichlet(self.alpha[s])
 
 class Components(object):
-    '''componenent memberships of each site
+    """componenent memberships of each site
     Public Methods:
         update_comp: draw the components according to the probability that the site is allocated to kernel
-        '''
+        """
 
     def __init__(self, reps, data):
         self.sites = data.sites
@@ -151,12 +171,12 @@ class Components(object):
             self.comp[rep, s] = self._vec_multin(comp_prob)
 
     def _vec_multin(self, p):
-    '''draw samples from n multinoulli distributions
-    Each sample is drawn according to the respective value in K
+        """draw samples from n multinoulli distributions
+        Each sample is drawn according to the respective value in K
 
-    Params:
-        p: 2D np.array, each column sums to one, 
-            number of columns equals number of samples'''
+        Params:
+            p: 2D np.array, each column sums to one, 
+                number of columns equals number of samples"""
 
         n = p.shape[1]
         pcum = p.cumsum(axis = 0)

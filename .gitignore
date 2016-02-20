@@ -1,0 +1,4 @@
+.*
+*.pyc
+!/.gitignore
+Normal_mix_simul.py
