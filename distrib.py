@@ -11,68 +11,71 @@ import scipy.stats as stats
 import sys
 
 class NG(object):
-    """Normal Gamma posterior for Gibbs sampling the mean & precision of k kernels
+    """A Normal Gamma posterior distribution is used for sampling the mean & precision 
+    of the k kernels.
 
     Public Attributes:
-        prior (dictionary): parameters of the conjugate prior Normal Gamma
-        counter: 
+        prior (dictionary): parameters of the conjugate Normal Gamma prior
+        counter (int): Gibbs sampling iteration number
         ----Parameters for the component truncated-Normal kernels----
-        mu (2D np.array): mean, 1st index is the Gibbs sampling iteration, 
-            2nd index identifies the component kernel 
+        mu (2D np.array): mean, 0th index is the Gibbs sampling iteration, 
+            1st index identifies the component kernel 
         prec (2D np.array): precision (inverse variance), indexing is similar to mu
     """
 
-    def __init__(self, reps, data):
-        """Args:
-            reps: total number of iterations of Gibbs sampler 
-            data: simulate_data object
+    def __init__(self, data, reps = 100):
         """
-
-        self.prior = {'alpha_0' : 1, 'beta_0' : .5, 'mu_0' : .5, 'lambda_0' : 1}
-        self.mu = np.zeros([reps+1, data.k])
-        self.prec = np.zeros([reps+1, data.k])
-        self.counter = 0
-        
-        for k in range(data.k):
-            self.prec[0][k] = self.draw_prec(0, 0, 0)
-            self.mu[0][k] = self.draw_mean(0, self.prec[0][k], 0)
-#        self.prior = {'alpha_0': 1, 'beta_0' : np.var(data.vals), 'mu_0' : .5, 'lambda_0' : 1}
-
-    def sample(self, data):
-        """Draw a mean and precision for each kernel from the posterior 
+        Initialize parameters using the prior to initiate the
+        Gibbs Sampling scheme.
         Args:
-            data: simulate_data object
+            reps: total number of iterations of Gibbs sampler 
+            data: fetch_data.simulate object
         """
-        self.counter += 1
+        self.prior = {'alpha_0' : 1, 'beta_0' : .5, 'mu_0' : .5, 'lambda_0' : 1}
+        self.mu = np.zeros([reps+1, data.K])
+        self.prec = np.zeros([reps+1, data.K])
+        
         for k in range(data.K):
-#retrieve observations from component k
-            X_k = data.X[comp == k]
-            n = X_k.size 
-            self.sample(X_k, n)
-        return None
-
-    def update(self, values, k, n):
-        """Bayesian update of the prior parameters"""
-
-        if n > 0:
-            tansform_vals = self._transform_trunc(values, k)
-            var_X = np.var(tansform_vals)
-            avg_X = np.mean(tansform_vals)
+            self.prec[0][k] = self._draw_prec(0, 0, 0)
+            self.mu[0][k] = self._draw_mean(0, self.prec[0][k], 0)
+        self.counter = 1
+ 
+    def update(self, data, kernel_comp):
+        """Do a Bayesian update of the prior parameters conditional on the values assigned 
+        to each kernel during the previous iteration of Gibbs Sampling. 
+        
+        Args:
+            data: fetch_data.simulate object
+            kernel_comp (2D np.array): identifies from which kernel each value is drawn from
+                0th index identifies the site and 1st index identifies the individual
+        """
+        for k in range(data.K):
+            data_k = data.X[kernel_comp == k]
+            mu_k = self.mu[self.counter-1, k]
+            sigma_k = 1/np.sqrt(self.prec[self.counter-1, k])
+            n = data_k.size
+#determine sample statistics of observations in component k
+            if n > 0:
+                tansformed_vals = self._transform_trunc(data_k, k)
+                var_k = np.var(tansformed_vals)
+                avg_k = np.mean(tansformed_vals)
 #n=0, so sampling from the posterior is equivalent to sampling from the prior.
 #Set var_X and avg_X to any value to allow drawing from the posterior method.
 #It will be multiplied by n, so it will have no influence.
-        if n == 0:
-            var_X = 0
-            avg_X = 0
-        self.prec[self.counter, k] = self.draw_prec(avg_X, var_X, n)
-        self.mu[self.counter, k] = self.draw_mean(avg_X, self.prec[self.counter, i], n)
+            if n == 0:
+                var_k = 0
+                avg_k = 0
+            self.prec[self.counter, k] = self._draw_prec(avg_k, var_k, n)
+            self.mu[self.counter, k] = self._draw_mean(avg_k, self.prec[self.counter, k], n)
+        self.counter += 1
         return None
 
     def _draw_prec(self, data_avg, data_var, n):
-        """draw a precision from the Gamma distribution"""
+        """Draw a precision from the Gamma distribution"""
 
         alpha_1 = self.prior['alpha_0'] + n/2
-        beta_1 = self.prior['beta_0'] + .5*(n*data_var) + .5 * (self.prior['lambda_0'] * n * (data_avg-self.prior['mu_0'])**2) / (self.prior['lambda_0'] + n)
+        beta_1 = self.prior['beta_0'] + .5*(n*data_var) + .5 * (self.prior['lambda_0'] * n \
+            * (data_avg-self.prior['mu_0'])**2) / (self.prior['lambda_0'] + n)
         prec = np.random.gamma(alpha_1, 1/beta_1)
         return prec
 
@@ -113,71 +116,110 @@ class NG(object):
         return a, b
 
 class MultiDirich(object):
-    """Mutlinomial Dirichlet distribution"""
+    """The Mutlinomial Dirichlet distribution is used to sample the mixing weights of the 
+    component kernels.
 
-    def __init__(self, sites, data):
-#prior count is 1 for each component
-        self.p_cnt = np.ones(data.k, dtype = np.int8)
-        self.sites = sites
-        self.k = data.k
-        self.pi = np.random.dirichlet(self.p_cnt, size = self.sites)
-        self.alpha = np.zeros((self.sites, self.k) , dtype = np.int8)
+    Public Attributes:
+        prior: number of sites belonging to each component kernel
+        n_sites: number of sites
+        k: number of components
+        Pi: mixture weight of the component kernel
+        alpha (np.array): the Dirichlet prior whcih is equivalent to 
+            the number of values in each kernel
+    Public Methods:
+        draw_dirichlet: Draw the mixing weights from the multinomial-dirichlet distribution 
+    """
 
-    def update_alpha(self, comp):
-        #input: the components array for a site and the prior count
-        #output: updated Dirichlet alpha parameter
+    def __init__(self, data):
+        """Set the intial parameter for the distribution assuming each component kernel has the 
+        same number of values, so a uniform prior is set where alpha = 1."""
+        self.k = data.K
+        self.prior = np.ones(self.k)
+        self.Pi = np.random.dirichlet(self.prior, size = data.n_sites)
+
+    def _update_alpha(self, kernel_comp, n_sites):
         #assert len(c.shape) == 2, 'component array is not 2 mu 2'
-        for s in range(self.sites):
-            self.alpha[s] = np.bincount(comp[s], minlength = self.k) + self.p_cnt
+        self.alpha = np.zeros((n_sites, self.k) , dtype = np.int8)
+        for s in range(n_sites):
+            self.alpha[s] = np.bincount(kernel_comp[s], minlength = self.k) + self.prior
         return None
 
     def marg_dirich(d, a):
-#calculate marginal for a dirichlet multinomial given data and alpha
-#input: vector of component for each value and Dirichlet alpha
-#get component counts
+        """Calculate marginal for a dirichlet multinomial given data and alpha
+        Args:
+            vector of component for each value and Dirichlet alpha
+        Returns:
+            component counts
+        """
         nvec = np.bincount(d)
         logZ_lik = np.sum(sp.gammaln(alpha_k + nvec)) - sp.gammaln(np.sum(alpha_k + nvec))
         logZ_prior = np.sum(sp.gammaln(alpha_k)) - sp.gammaln(np.sum(alpha_k))
         return logZ_lik - logZ_prior
 
-    def draw_dirichlet(self, comp):
-#for each site draw a mixture proportion from a dirichlet updated with the counts
-        self.update_alpha(comp)
-        for s in range(self.sites):
-            self.pi[s] = np.random.dirichlet(self.alpha[s])
+    def update(self, kernel_comp, data):
+        """For each site draw a mixture proportion from a dirichlet updated with the counts."""
+        self._update_alpha(kernel_comp, data.n_sites)
+        for s in range(data.n_sites):
+            self.Pi[s] = np.random.dirichlet(self.alpha[s])
 
 class Components(object):
-    """componenent memberships of each site
+    """Component membership of each value identifies which kernel component 
+        each site's value is drawn from. 
+    Public Attributes:
+        n_sites (int): number of values/ sites per individual
+        n_subj (int): number of subjects
+        counter (int): Gibbs sampling iteration number
+        kernel_comp (3-D np.array): An integer identifying which component kernel 
+            each value belongs to.
+            0th index is the Gibbs sampling iteration, 1st index identifies the site, 
+            and 2nd index identifies the individual
     Public Methods:
-        update_comp: draw the components according to the probability that the site is allocated to kernel
-        """
+        update_comp
+    """
 
-    def __init__(self, reps, data):
-        self.sites = data.sites
-        self.indiv = data.indiv
+    def __init__(self, data, reps = 100):
         self.k = data.K
-        self.comp = np.zeros((reps, self.sites, self.indiv), dtype = np.int8)
+        self.kernel_comp = np.zeros((reps, data.n_sites, data.n_subj), dtype = np.int8)
+        self.counter = 0
 
-    def update_comp(self, data_vals, ng_params, pi, rep):
-        self.lik = np.zeros([self.k, self.indiv])
-        means = ng_params.mu[rep]
-        stdev = np.sqrt(1 /ng_params.prec[rep])
-        a, b = (0 - means)/ stdev, (1 - means) / stdev
-        for s in range(self.sites):
-            for k in range(self.k):
-                self.lik[k] = stats.truncnorm.pdf(data_vals[s], a[k], b[k], loc = means[k], scale = stdev[k])
-            comp_prob = pi[s, :, np.newaxis] * self.lik
-            comp_prob = comp_prob / np.sum(comp_prob, axis = 0)
-            self.comp[rep, s] = self._vec_multin(comp_prob)
+    def _calc_probability(self, site_values, means, stdevs, weights, n_subj):
+        """For each individual calculate the probability with which the value at the given site
+        is realized from each component kernel and scale the probabilities 
+        by their respective mixing weight.
+        """
+        prob = np.zeros([self.k, n_subj])
+        a, b = (0 - means)/ stdevs, (1 - means) / stdevs
+        for k in range(self.k):
+            prob[k] = stats.truncnorm.pdf(site_values, a[k], b[k], 
+                loc = means[k], scale = stdevs[k])
+        return weights * prob
+
+    def update(self, data, ng_gibbs, weights):
+        """Draw the categorical variable that 
+
+        Args:
+            data: fetch_data.simulate object
+            ng_gibbs: NG object
+            weights: the kernel mixing weights drawn from the multinomial-dirichlet
+                during the last Gibbs Sampling iteration
+        """
+        means = ng_gibbs.mu[self.counter]
+        stdevs = np.sqrt(1. /ng_gibbs.prec[self.counter])
+        n_subj = data.n_subj
+        for s in range(data.n_sites):
+            prob = self._calc_probability(data.X[s], means, stdevs, weights[s, :, np.newaxis], n_subj)
+            prob = prob / np.sum(prob, axis = 0)
+            self.kernel_comp[self.counter, s] = self._vec_multin(prob)
+        self.counter += 1
 
     def _vec_multin(self, p):
-        """draw samples from n multinoulli distributions
+        """Draw samples from n multinoulli distributions
         Each sample is drawn according to the respective value in K
 
-        Params:
+        Args:
             p: 2D np.array, each column sums to one, 
-                number of columns equals number of samples"""
-
+                number of columns equals number of samples
+        """
         n = p.shape[1]
         pcum = p.cumsum(axis = 0)
         rvs = np.random.rand(1,n)

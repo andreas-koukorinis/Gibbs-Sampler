@@ -1,0 +1,2 @@
+We use conjugate distributions so the parameters can be updated in a closed form manner.
+For more details about this hypothesis testing framework refer to page 16-17: http://bit.ly/1T0Z2RV (Lock and Dunson 2015)

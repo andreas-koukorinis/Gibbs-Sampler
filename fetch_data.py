@@ -67,7 +67,7 @@ class simulate(object):
         for s in range(self.n_sites):
     #iterate and draw components for all subjects in population i
             for p in range(self.n_popl):
-                self.true_comp[s][labels == p] = np.random.choice(self.K, size = self.n_popl[p], p = self.true_pi[s, p])
+                self.true_comp[s][labels == p] = np.random.choice(self.K, size = self.subj_popl[p], p = self.true_pi[s, p])
 
     def _drawX(self):
         """Set X: draw all the feature values from the respective truncated normals"""
