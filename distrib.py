@@ -38,7 +38,7 @@ class NG(object):
         for k in range(data.K):
             self.prec[0][k] = self._draw_prec(0, 0, 0)
             self.mu[0][k] = self._draw_mean(0, self.prec[0][k], 0)
-        self.counter = 1
+        self.counter = 0
  
     def update(self, data, kernel_comp):
         """Do a Bayesian update of the prior parameters conditional on the values assigned 
@@ -49,6 +49,7 @@ class NG(object):
             kernel_comp (2D np.array): identifies from which kernel each value is drawn from
                 0th index identifies the site and 1st index identifies the individual
         """
+        self.counter += 1
         for k in range(data.K):
             data_k = data.X[kernel_comp == k]
             mu_k = self.mu[self.counter-1, k]
@@ -67,7 +68,6 @@ class NG(object):
                 avg_k = 0
             self.prec[self.counter, k] = self._draw_prec(avg_k, var_k, n)
             self.mu[self.counter, k] = self._draw_mean(avg_k, self.prec[self.counter, k], n)
-        self.counter += 1
         return None
 
     def _draw_prec(self, data_avg, data_var, n):
@@ -117,7 +117,7 @@ class NG(object):
 
 class MultiDirich(object):
     """The Mutlinomial Dirichlet distribution is used to sample the mixing weights of the 
-    component kernels.
+    component kernels of each site.
 
     Public Attributes:
         prior: number of sites belonging to each component kernel
@@ -127,7 +127,7 @@ class MultiDirich(object):
         alpha (np.array): the Dirichlet prior whcih is equivalent to 
             the number of values in each kernel
     Public Methods:
-        draw_dirichlet: Draw the mixing weights from the multinomial-dirichlet distribution 
+        update: Draw the mixing weights from the multinomial-dirichlet distribution 
     """
 
     def __init__(self, data):
@@ -138,7 +138,9 @@ class MultiDirich(object):
         self.Pi = np.random.dirichlet(self.prior, size = data.n_sites)
 
     def _update_alpha(self, kernel_comp, n_sites):
-        #assert len(c.shape) == 2, 'component array is not 2 mu 2'
+        """At each site, for each Dirichlet parameter alpha_k at each site, 
+        sum the prior and the number of variables in that category.
+        """
         self.alpha = np.zeros((n_sites, self.k) , dtype = np.int8)
         for s in range(n_sites):
             self.alpha[s] = np.bincount(kernel_comp[s], minlength = self.k) + self.prior
@@ -156,7 +158,7 @@ class MultiDirich(object):
         logZ_prior = np.sum(sp.gammaln(alpha_k)) - sp.gammaln(np.sum(alpha_k))
         return logZ_lik - logZ_prior
 
-    def update(self, kernel_comp, data):
+    def update(self, data, kernel_comp):
         """For each site draw a mixture proportion from a dirichlet updated with the counts."""
         self._update_alpha(kernel_comp, data.n_sites)
         for s in range(data.n_sites):
@@ -180,9 +182,9 @@ class Components(object):
     def __init__(self, data, reps = 100):
         self.k = data.K
         self.kernel_comp = np.zeros((reps, data.n_sites, data.n_subj), dtype = np.int8)
-        self.counter = 0
+        self.counter = -1
 
-    def _calc_probability(self, site_values, means, stdevs, weights, n_subj):
+    def _calc_probability(self, site_values, means, stdevs, pi, n_subj):
         """For each individual calculate the probability with which the value at the given site
         is realized from each component kernel and scale the probabilities 
         by their respective mixing weight.
@@ -192,22 +194,22 @@ class Components(object):
         for k in range(self.k):
             prob[k] = stats.truncnorm.pdf(site_values, a[k], b[k], 
                 loc = means[k], scale = stdevs[k])
-        return weights * prob
+        return pi * prob
 
-    def update(self, data, ng_gibbs, weights):
+    def update(self, data, ng_gibbs, Pi):
         """Draw the categorical variable that 
 
         Args:
             data: fetch_data.simulate object
             ng_gibbs: NG object
-            weights: the kernel mixing weights drawn from the multinomial-dirichlet
+            Pi (2D np.array): the kernel mixing weights of each site drawn from the multinomial-dirichlet
                 during the last Gibbs Sampling iteration
         """
-        means = ng_gibbs.mu[self.counter]
-        stdevs = np.sqrt(1. /ng_gibbs.prec[self.counter])
+        means = ng_gibbs.mu[ng_gibbs.counter]
+        stdevs = np.sqrt(1. /ng_gibbs.prec[ng_gibbs.counter])
         n_subj = data.n_subj
         for s in range(data.n_sites):
-            prob = self._calc_probability(data.X[s], means, stdevs, weights[s, :, np.newaxis], n_subj)
+            prob = self._calc_probability(data.X[s], means, stdevs, Pi[s, :, np.newaxis], n_subj)
             prob = prob / np.sum(prob, axis = 0)
             self.kernel_comp[self.counter, s] = self._vec_multin(prob)
         self.counter += 1

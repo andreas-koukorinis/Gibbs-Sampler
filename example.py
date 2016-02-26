@@ -1,23 +1,23 @@
 from __future__ import division
 from scipy.stats import norm
 import numpy as np
-import set_params
-import distrib as dist
+import fetch_data
+import distrib
 
 sites = 3
-reps = 3000
+reps = 10
 k = 3
 
-data = set_params.simulate(sites, k, np.array([30]))
+data = fetch_data.simulate(sites, k, np.array([60]))
 #loop through the gibbs sampler to set initial value for the parameter
-z = dist.Components(reps, data)
-theta = dist.NG(reps, data)
-phi = dist.MultiDirich(sites, data)
+z = distrib.Components(data, 10)
+theta = distrib.NG(data, 10)
+weights = distrib.MultiDirich(data)
 
 for r in range(reps):
 #draw components
-    z.update_comp(data.vals, theta, phi.pi, r)
-#sample mean and precision from a Normal Gamma
-    theta.update(data, z.comp[r], r)
+    z.update(data, theta, weights.Pi)
 #use likelihood of values and dirichlet prior to draw mixing weights
-    phi.draw_dirichlet(z.comp[r])
+    weights.update(data, z.kernel_comp[z.counter])
+#sample mean and precision from a Normal Gamma
+    theta.update(data, z.kernel_comp[z.counter])
