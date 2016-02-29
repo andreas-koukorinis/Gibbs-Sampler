@@ -6,7 +6,7 @@ Here we have taken 30 sensor readings from 10 individuals. We have overlain the 
 ![](images/simulated_data.png?raw=true)
 
 
-We use Gibbs sampling knowing only that the data was generated from a mixture of 2 truncated normals. Thanks to Gibbs sampling finding the mixing weights, the truncated normal distribution mean and standard deviation, and the which kernel each variable belongs to, the startup can live on. 
+We use Gibbs sampling knowing only that the data was generated from a mixture of 2 truncated normals. Thanks to Gibbs sampling finding the mixing weights, the truncated normal distribution mean and standard deviation, and which kernel each reading belongs to, the startup can live on. 
 ![](images/fit_data.png?raw=true)
 
 Our Gibbs sampler has 3 steps which we iterate for 1500 rounds. At each step we use the parameters sampled during the previous steps to sample one of the unknowns. One unknown is the component variable, which determines whether a reading is generated from the day kernel or night kernel. Another unknown is the probability a reading belongs to each distribution. The third set of unknowns are the parameters of the truncated normal distribution.
