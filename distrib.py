@@ -52,14 +52,12 @@ class NG(object):
         self.counter += 1
         for k in range(data.K):
             data_k = data.X[kernel_comp == k]
-            mu_k = self.mu[self.counter-1, k]
-            sigma_k = 1/np.sqrt(self.prec[self.counter-1, k])
             n = data_k.size
 #determine sample statistics of observations in component k
             if n > 0:
-                tansformed_vals = self._transform_trunc(data_k, k)
-                var_k = np.var(tansformed_vals)
-                avg_k = np.mean(tansformed_vals)
+                transformed_vals = self._transform_trunc(data_k, k)
+                var_k = np.var(transformed_vals)
+                avg_k = np.mean(transformed_vals)
 #n=0, so sampling from the posterior is equivalent to sampling from the prior.
 #Set var_X and avg_X to any value to allow drawing from the posterior method.
 #It will be multiplied by n, so it will have no influence.
@@ -68,19 +66,22 @@ class NG(object):
                 avg_k = 0
             self.prec[self.counter, k] = self._draw_prec(avg_k, var_k, n)
             self.mu[self.counter, k] = self._draw_mean(avg_k, self.prec[self.counter, k], n)
+        self._sort_params()
         return None
 
     def _draw_prec(self, data_avg, data_var, n):
         """Draw a precision from the Gamma distribution"""
 
         alpha_1 = self.prior['alpha_0'] + n/2
-        beta_1 = self.prior['beta_0'] + .5*(n*data_var) + .5 * (self.prior['lambda_0'] * n \
+        beta_1 = self.prior['beta_0'] + .5*(n*data_var) + .5 * (self.prior['lambda_0'] * n
             * (data_avg-self.prior['mu_0'])**2) / (self.prior['lambda_0'] + n)
         prec = np.random.gamma(alpha_1, 1/beta_1)
+        if np.isnan(prec):
+            print alpha_1, beta_1, n, data_var, data_avg
         return prec
 
     def _draw_mean(self, data_avg, prec, n):
-        """draw the mean from a normal gamma distribution conditional on the precision"""
+        """Draw the mean from a normal gamma distribution conditional on the precision."""
 
         mu_1 = (self.prior['lambda_0'] * self.prior['mu_0'] + n * data_avg) / (self.prior['lambda_0'] + n)
         lambda_1 = self.prior['lambda_0'] + n
@@ -107,13 +108,13 @@ class NG(object):
         cdf_values = stats.truncnorm.cdf(values, a, b, mu, sigma)
         return stats.norm.ppf(cdf_values, mu, sigma)
 
-    def sort(self, a, b):
-#sort arrays using the order from the first
-#used to rearrange means
-        p = np.argsort(a)
-        b = b[p]
-        a = a[p]
-        return a, b
+    def _sort_params(self):
+        """Sort the parameters, according to the increasing order of the means, 
+        to avoid the label switching problem."""
+
+        idx = np.argsort(self.mu[self.counter])
+        self.mu[self.counter] = self.mu[self.counter][idx]
+        self.prec[self.counter] = self.prec[self.counter][idx]
 
 class MultiDirich(object):
     """The Mutlinomial Dirichlet distribution is used to sample the mixing weights of the 
@@ -164,6 +165,7 @@ class MultiDirich(object):
         for s in range(data.n_sites):
             self.Pi[s] = np.random.dirichlet(self.alpha[s])
 
+#concentration +
 class Components(object):
     """Component membership of each value identifies which kernel component 
         each site's value is drawn from. 
@@ -197,14 +199,14 @@ class Components(object):
         return pi * prob
 
     def update(self, data, ng_gibbs, Pi):
-        """Draw the categorical variable that 
-
+        """Draw the categorical variable that represents the kernel which generates the site.
         Args:
             data: fetch_data.simulate object
             ng_gibbs: NG object
             Pi (2D np.array): the kernel mixing weights of each site drawn from the multinomial-dirichlet
                 during the last Gibbs Sampling iteration
         """
+        self.counter += 1
         means = ng_gibbs.mu[ng_gibbs.counter]
         stdevs = np.sqrt(1. /ng_gibbs.prec[ng_gibbs.counter])
         n_subj = data.n_subj
@@ -212,7 +214,6 @@ class Components(object):
             prob = self._calc_probability(data.X[s], means, stdevs, Pi[s, :, np.newaxis], n_subj)
             prob = prob / np.sum(prob, axis = 0)
             self.kernel_comp[self.counter, s] = self._vec_multin(prob)
-        self.counter += 1
 
     def _vec_multin(self, p):
         """Draw samples from n multinoulli distributions
@@ -226,3 +227,5 @@ class Components(object):
         pcum = p.cumsum(axis = 0)
         rvs = np.random.rand(1,n)
         return (rvs<pcum).argmax(0)
+
+#for(k in 1:K) logF[,,k] = log(tau[,k])-log(Sigma[k])+(-log(2*pi)-((X-mu[k])/Sigma[k])^2)/2-log(pnorm(1,mu[k],Sigma[k])-pnorm(0,mu[k],Sigma[k]))
