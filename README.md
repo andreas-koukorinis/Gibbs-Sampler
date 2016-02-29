@@ -3,7 +3,7 @@ Can Gibbs Sampling save the startup?
 A startup is prototyping a sensor device which has so far taken p readings from n individuals, where p>>n. However, they have lost the time information for their readings and are desperate to identify which readings were taken when the individuals were sleeping and which were taken when they were awake. However, they know the readings fall in the interval of 0 to 1 and occur at the same time for all individuals. Additionally, the readings taken during when an individual is awake will fall under a different distribution than readings taken while he/she is asleep, but the distribution parameters are unknown. In other words, there are 2 Truncated-Normal distributions that generate the data for all the individuals, and if we can find the the parameters of these 2 distributions we can discriminate between readings taken at night and those taken during the day.
 
 Here are the sensor readings from all the individuals. We have overlain the true (unknown) distributions used to generate the readings. We can assume the blue are readings during the day and the red are those taken at night.
-![](images/simulated.png?raw=true)
+![](images/simulated_data.png?raw=true)
 
 
 We use Gibbs sampling knowing only that the data was generated from a mixture of 2 truncated normals. Thanks to Gibbs sampling finding the mixing weights, the truncated normal distribution mean and standard deviation, and the which kernel each variable belongs to, the startup can live on. 
